@@ -256,7 +256,7 @@ export default function GameCanvas() {
 
     return (
         <div className="flex flex-col items-center gap-4 sm:gap-6 w-full px-4">
-            <div className="relative w-full max-w-[540px]">
+            <div className="relative w-full max-w-135">
                 <div className="relative z-10 mx-auto w-fit px-8 py-2 bg-[#1a1410] border-2 border-[#4a4238] rounded-t-xl border-b-0 flex items-center gap-4">
                     <span
                         className="text-3xl font-bold tracking-[0.2em] tabular-nums"
