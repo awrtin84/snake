@@ -52,7 +52,7 @@ function getRandomFoodPosition(snake, obstacles) {
     return position;
 }
 
-export function useSnakeGame(speed, hasObstacles) {
+export function useSnakeGame(speed, hasObstacles, wrap) {
     const [snake, setSnake] = useState(INITIAL_SNAKE);
     const [obstacles, setObstacles] = useState([]);
     const [food, setFood] = useState(() =>
@@ -63,6 +63,7 @@ export function useSnakeGame(speed, hasObstacles) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [score, setScore] = useState(0);
+    const [runId, setRunId] = useState(0);
     const directionRef = useRef(direction);
 
     useEffect(() => {
@@ -88,6 +89,7 @@ export function useSnakeGame(speed, hasObstacles) {
         setIsPaused(false);
         setScore(0);
         setIsPlaying(true);
+        setRunId((id) => id + 1);
     }, [hasObstacles]);
 
     const togglePause = useCallback(() => {
@@ -101,16 +103,22 @@ export function useSnakeGame(speed, hasObstacles) {
             setSnake((prevSnake) => {
                 const currentDirection = directionRef.current;
                 const head = prevSnake[0];
-                const newHead = {
-                    x: head.x + currentDirection.x,
-                    y: head.y + currentDirection.y,
-                };
+                const rawX = head.x + currentDirection.x;
+                const rawY = head.y + currentDirection.y;
+
+                const newHead = wrap
+                    ? {
+                          x: (rawX + GRID_SIZE) % GRID_SIZE,
+                          y: (rawY + GRID_SIZE) % GRID_SIZE,
+                      }
+                    : { x: rawX, y: rawY };
 
                 const hitWall =
-                    newHead.x < 0 ||
-                    newHead.y < 0 ||
-                    newHead.x >= GRID_SIZE ||
-                    newHead.y >= GRID_SIZE;
+                    !wrap &&
+                    (newHead.x < 0 ||
+                        newHead.y < 0 ||
+                        newHead.x >= GRID_SIZE ||
+                        newHead.y >= GRID_SIZE);
                 const hitSelf = prevSnake.some((s) =>
                     isSamePosition(s, newHead),
                 );
@@ -141,13 +149,14 @@ export function useSnakeGame(speed, hasObstacles) {
         }, speed);
 
         return () => clearInterval(interval);
-    }, [food, isGameOver, isPlaying, isPaused, speed, obstacles]);
+    }, [food, isGameOver, isPlaying, isPaused, speed, obstacles, wrap]);
 
     return {
         snake,
         food,
         obstacles,
         score,
+        runId,
         isGameOver,
         isPlaying,
         isPaused,

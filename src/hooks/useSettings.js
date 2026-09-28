@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
-import { getSettings, saveSettings } from "@/lib/settingsStorage";
+import {
+    DEFAULT_SETTINGS,
+    getSettings,
+    saveSettings,
+} from "@/lib/settingsStorage";
 
 export function useSettings() {
-    const [settings, setSettings] = useState({
-        theme: "classic",
-        difficulty: "normal",
-    });
+    const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
     useEffect(() => {
         setSettings(getSettings());

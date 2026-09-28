@@ -1,9 +1,11 @@
 const STORAGE_KEY = "nokia-snake-settings";
 
 export const DEFAULT_SETTINGS = {
-    theme: "classic",
+    theme: "google",
     difficulty: "normal",
+    mode: "walls",
     soundEnabled: true,
+    playerName: "",
 };
 
 export function getSettings() {

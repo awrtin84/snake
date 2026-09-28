@@ -3,86 +3,263 @@ import { useEffect, useRef, useState } from "react";
 import { useSnakeGame } from "@/hooks/useSnakeGame";
 import { useSettings } from "@/hooks/useSettings";
 import { GRID_SIZE, CELL_SIZE, CANVAS_SIZE } from "@/lib/gameConfig";
-import { THEMES, DIFFICULTIES } from "@/lib/themes";
+import { THEMES, DIFFICULTIES, MODES } from "@/lib/themes";
 import { saveScore } from "@/lib/scoreStorage";
 import { setMuted } from "@/lib/sounds";
 import Scoreboard from "@/components/scoreboard";
 import SettingsMenu from "@/components/settingsMenu";
-import NameEntryModal from "@/components/nameEntryModal";
 
 const OBSTACLE_COLOR = "#57534e";
 const OBSTACLE_BORDER = "#292524";
+const SAMPLE_STEP = 5;
+const MAX_RADIUS = CELL_SIZE * 0.39;
+const HEAD_RADIUS = MAX_RADIUS + 1;
 
-function drawRoundedRect(ctx, x, y, size, radius) {
-    ctx.beginPath();
-    ctx.roundRect(x, y, size, size, radius);
-    ctx.fill();
+function shortest(delta) {
+    if (delta > GRID_SIZE / 2) return delta - GRID_SIZE;
+    if (delta < -GRID_SIZE / 2) return delta + GRID_SIZE;
+    return delta;
 }
 
-function lerp(a, b, t) {
-    return a + (b - a) * t;
+function buildSnakePoints(prev, cur, t) {
+    const chain = [{ x: cur[0].x, y: cur[0].y }];
+    for (let i = 1; i < cur.length; i++) {
+        const last = chain[i - 1];
+        chain.push({
+            x: last.x + shortest(cur[i].x - last.x),
+            y: last.y + shortest(cur[i].y - last.y),
+        });
+    }
+
+    const headDx = shortest(prev[0].x - cur[0].x);
+    const headDy = shortest(prev[0].y - cur[0].y);
+
+    if (cur.length > 1) {
+        const lastIndex = cur.length - 1;
+        const tailPrev = prev[prev.length - 1];
+        const tailCur = cur[lastIndex];
+        chain[lastIndex] = {
+            x: chain[lastIndex].x + shortest(tailPrev.x - tailCur.x) * (1 - t),
+            y: chain[lastIndex].y + shortest(tailPrev.y - tailCur.y) * (1 - t),
+        };
+    }
+
+    chain[0] = {
+        x: cur[0].x + headDx * (1 - t),
+        y: cur[0].y + headDy * (1 - t),
+    };
+
+    const heading =
+        headDx === 0 && headDy === 0
+            ? { x: 1, y: 0 }
+            : { x: -headDx, y: -headDy };
+
+    return { points: chain, heading };
+}
+
+function buildSnakeBody(points) {
+    const half = CELL_SIZE / 2;
+    const px = points.map((p) => ({
+        x: p.x * CELL_SIZE + half,
+        y: p.y * CELL_SIZE + half,
+    }));
+
+    const segLengths = [];
+    let total = 0;
+    for (let i = 1; i < px.length; i++) {
+        const length = Math.hypot(px[i].x - px[i - 1].x, px[i].y - px[i - 1].y);
+        segLengths.push(length);
+        total += length;
+    }
+
+    const taperLength = Math.min(CELL_SIZE * 3, total * 0.6);
+    const count = Math.max(Math.ceil(total / SAMPLE_STEP), 0);
+    const samples = [];
+    let segIndex = 0;
+    let segStart = 0;
+
+    for (let i = 0; i <= count; i++) {
+        const dist = Math.min(i * SAMPLE_STEP, total);
+        while (
+            segIndex < segLengths.length - 1 &&
+            dist > segStart + segLengths[segIndex]
+        ) {
+            segStart += segLengths[segIndex];
+            segIndex++;
+        }
+
+        let x = px[0].x;
+        let y = px[0].y;
+        if (segLengths.length > 0) {
+            const a = px[segIndex];
+            const b = px[segIndex + 1];
+            const k =
+                segLengths[segIndex] > 0
+                    ? (dist - segStart) / segLengths[segIndex]
+                    : 0;
+            x = a.x + (b.x - a.x) * k;
+            y = a.y + (b.y - a.y) * k;
+        }
+
+        const distFromTail = total - dist;
+        const taper =
+            taperLength > 0 ? Math.min(distFromTail / taperLength, 1) : 1;
+        const r = MAX_RADIUS * (0.42 + 0.58 * Math.sin((taper * Math.PI) / 2));
+        samples.push({ x, y, r });
+    }
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    samples.forEach((s) => {
+        minX = Math.min(minX, s.x - s.r);
+        maxX = Math.max(maxX, s.x + s.r);
+        minY = Math.min(minY, s.y - s.r);
+        maxY = Math.max(maxY, s.y + s.r);
+    });
+
+    return { samples, head: px[0], minX, maxX, minY, maxY };
+}
+
+function drawSnake(ctx, body, heading, theme, offsetX, offsetY) {
+    const head = { x: body.head.x + offsetX, y: body.head.y + offsetY };
+
+    ctx.save();
+    ctx.fillStyle = theme.body;
+    ctx.shadowColor = "rgba(0,0,0,0.3)";
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 3;
+    ctx.beginPath();
+    body.samples.forEach((s) => {
+        const x = s.x + offsetX;
+        const y = s.y + offsetY;
+        ctx.moveTo(x + s.r, y);
+        ctx.arc(x, y, s.r, 0, Math.PI * 2);
+    });
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = theme.head;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, HEAD_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    const perp = { x: -heading.y, y: heading.x };
+    [-1, 1].forEach((side) => {
+        const ex =
+            head.x +
+            heading.x * HEAD_RADIUS * 0.3 +
+            perp.x * side * HEAD_RADIUS * 0.5;
+        const ey =
+            head.y +
+            heading.y * HEAD_RADIUS * 0.3 +
+            perp.y * side * HEAD_RADIUS * 0.5;
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(ex, ey, HEAD_RADIUS * 0.34, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#1a1a1a";
+        ctx.beginPath();
+        ctx.arc(
+            ex + heading.x * HEAD_RADIUS * 0.1,
+            ey + heading.y * HEAD_RADIUS * 0.1,
+            HEAD_RADIUS * 0.18,
+            0,
+            Math.PI * 2,
+        );
+        ctx.fill();
+    });
 }
 
 export default function GameCanvas() {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
     const { settings, updateSettings } = useSettings();
-    const theme = THEMES[settings.theme];
-    const difficulty = DIFFICULTIES[settings.difficulty];
+    const theme = THEMES[settings.theme] ?? THEMES.google;
+    const difficulty = DIFFICULTIES[settings.difficulty] ?? DIFFICULTIES.normal;
+    const isFree = (MODES[settings.mode] ?? MODES.walls).wrap;
 
     const {
         snake,
         food,
         obstacles,
         score,
+        runId,
         isGameOver,
         isPlaying,
         isPaused,
         changeDirection,
         startGame,
         togglePause,
-    } = useSnakeGame(difficulty.speed, difficulty.hasObstacles);
+    } = useSnakeGame(difficulty.speed, difficulty.hasObstacles, isFree);
 
     const prevSnakeRef = useRef(snake);
     const currentSnakeRef = useRef(snake);
+    const lastRunIdRef = useRef(runId);
     const lastTickTimeRef = useRef(performance.now());
+    const tickDurationRef = useRef(difficulty.speed);
+    const speedRef = useRef(difficulty.speed);
+    const progressRef = useRef(1);
     const touchStartRef = useRef(null);
     const wasPlayingRef = useRef(false);
     const [scoreVersion, setScoreVersion] = useState(0);
-    const [showNameEntry, setShowNameEntry] = useState(false);
 
     useEffect(() => {
         setMuted(!settings.soundEnabled);
     }, [settings.soundEnabled]);
 
     useEffect(() => {
-        prevSnakeRef.current = currentSnakeRef.current;
+        speedRef.current = difficulty.speed;
+    }, [difficulty.speed]);
+
+    useEffect(() => {
+        const now = performance.now();
+        const speed = speedRef.current;
+        const isNewRun = lastRunIdRef.current !== runId;
+        const interval = now - lastTickTimeRef.current;
+        lastRunIdRef.current = runId;
+
+        tickDurationRef.current =
+            isNewRun || interval > speed * 1.6 || interval < speed * 0.5
+                ? speed
+                : interval;
+        prevSnakeRef.current = isNewRun ? snake : currentSnakeRef.current;
         currentSnakeRef.current = snake;
-        lastTickTimeRef.current = performance.now();
-    }, [snake]);
+        lastTickTimeRef.current = now;
+        progressRef.current = isNewRun ? 1 : 0;
+    }, [snake, runId]);
+
+    useEffect(() => {
+        if (!isPaused) {
+            lastTickTimeRef.current =
+                performance.now() -
+                progressRef.current * tickDurationRef.current;
+        }
+    }, [isPaused]);
 
     useEffect(() => {
         if (wasPlayingRef.current && isGameOver) {
-            setShowNameEntry(true);
+            saveScore(score, (settings.playerName ?? "").trim());
+            setScoreVersion((v) => v + 1);
         }
         wasPlayingRef.current = isPlaying;
-    }, [isPlaying, isGameOver]);
-
-    const handleNameSubmit = (name) => {
-        saveScore(score, name);
-        setScoreVersion((v) => v + 1);
-        setShowNameEntry(false);
-    };
+    }, [isPlaying, isGameOver, score, settings.playerName]);
 
     useEffect(() => {
         let rafId;
 
         const render = () => {
             const ctx = canvasRef.current.getContext("2d");
-            const elapsed = performance.now() - lastTickTimeRef.current;
-            const t = isPaused
-                ? 0
-                : Math.min(elapsed / (difficulty.speed * 0.8), 1);
+
+            if (!isPaused) {
+                const elapsed = performance.now() - lastTickTimeRef.current;
+                progressRef.current = Math.min(
+                    elapsed / tickDurationRef.current,
+                    1,
+                );
+            }
+            const t = progressRef.current;
 
             for (let row = 0; row < GRID_SIZE; row++) {
                 for (let col = 0; col < GRID_SIZE; col++) {
@@ -114,63 +291,61 @@ export default function GameCanvas() {
                 ctx.stroke();
             });
 
-            const current = currentSnakeRef.current;
-            const prev = prevSnakeRef.current;
-
-            current.forEach((segment, index) => {
-                const from =
-                    index === 0 ? prev[0] : (prev[index - 1] ?? segment);
-                const x = lerp(from.x, segment.x, t) * CELL_SIZE;
-                const y = lerp(from.y, segment.y, t) * CELL_SIZE;
-
-                const isHead = index === 0;
-                ctx.fillStyle = isHead ? theme.head : theme.body;
-                const padding = 2;
-                drawRoundedRect(
-                    ctx,
-                    x + padding,
-                    y + padding,
-                    CELL_SIZE - padding * 2,
-                    8,
-                );
-
-                if (isHead) {
-                    ctx.fillStyle = theme.boardA;
-                    const cx = x + CELL_SIZE / 2;
-                    const cy = y + CELL_SIZE / 2;
-                    ctx.beginPath();
-                    ctx.arc(cx - 5, cy - 3, 2, 0, Math.PI * 2);
-                    ctx.arc(cx + 5, cy - 3, 2, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            });
-
-            const pulse = 1 + Math.sin(performance.now() / 200) * 0.08;
+            const pulse = 1 + Math.sin(performance.now() / 200) * 0.06;
             const foodX = food.x * CELL_SIZE + CELL_SIZE / 2;
             const foodY = food.y * CELL_SIZE + CELL_SIZE / 2;
-            const radius = (CELL_SIZE / 2) * pulse;
-            const gradient = ctx.createRadialGradient(
-                foodX,
-                foodY,
-                2,
-                foodX,
-                foodY,
-                radius,
-            );
-            gradient.addColorStop(0, "#ffffff");
-            gradient.addColorStop(0.3, theme.food);
-            gradient.addColorStop(1, "rgba(0,0,0,0)");
-            ctx.fillStyle = gradient;
+            const foodRadius = CELL_SIZE * 0.36 * pulse;
+            ctx.fillStyle = theme.food;
             ctx.beginPath();
-            ctx.arc(foodX, foodY, radius, 0, Math.PI * 2);
+            ctx.arc(foodX, foodY, foodRadius, 0, Math.PI * 2);
             ctx.fill();
+            ctx.fillStyle = "rgba(255,255,255,0.45)";
+            ctx.beginPath();
+            ctx.arc(
+                foodX - foodRadius * 0.35,
+                foodY - foodRadius * 0.35,
+                foodRadius * 0.25,
+                0,
+                Math.PI * 2,
+            );
+            ctx.fill();
+            ctx.fillStyle = "#3f9b3f";
+            ctx.beginPath();
+            ctx.ellipse(
+                foodX + foodRadius * 0.3,
+                foodY - foodRadius * 1.05,
+                foodRadius * 0.45,
+                foodRadius * 0.2,
+                -Math.PI / 5,
+                0,
+                Math.PI * 2,
+            );
+            ctx.fill();
+
+            const { points, heading } = buildSnakePoints(
+                prevSnakeRef.current,
+                currentSnakeRef.current,
+                t,
+            );
+            const body = buildSnakeBody(points);
+            const offsets = isFree ? [-CANVAS_SIZE, 0, CANVAS_SIZE] : [0];
+            offsets.forEach((ox) => {
+                offsets.forEach((oy) => {
+                    const visible =
+                        body.maxX + ox > 0 &&
+                        body.minX + ox < CANVAS_SIZE &&
+                        body.maxY + oy > 0 &&
+                        body.minY + oy < CANVAS_SIZE;
+                    if (visible) drawSnake(ctx, body, heading, theme, ox, oy);
+                });
+            });
 
             rafId = requestAnimationFrame(render);
         };
 
         rafId = requestAnimationFrame(render);
         return () => cancelAnimationFrame(rafId);
-    }, [food, theme, difficulty.speed, obstacles, isPaused]);
+    }, [food, theme, obstacles, isPaused, isFree]);
 
     useEffect(() => {
         const keyMap = {
@@ -181,6 +356,12 @@ export default function GameCanvas() {
         };
 
         const handleKeyDown = (e) => {
+            if (
+                e.target instanceof Element &&
+                e.target.closest('[role="dialog"]')
+            ) {
+                return;
+            }
             if (keyMap[e.key] && !isPaused) {
                 e.preventDefault();
                 changeDirection(keyMap[e.key]);
@@ -254,14 +435,34 @@ export default function GameCanvas() {
     const dpadButtonClass =
         "flex items-center justify-center w-12 h-12 rounded-lg bg-black/40 hover:bg-black/60 border border-lime-500/40 text-lime-300 text-xl font-bold transition-colors active:scale-95";
 
+    const frameClass = isFree
+        ? "border-2 border-dashed border-white/40 bg-black/40"
+        : theme.frame
+          ? "border-2"
+          : "wall-frame";
+    const frameStyle =
+        !isFree && theme.frame
+            ? {
+                  backgroundColor: theme.frame,
+                  borderColor: theme.tabBorder,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+              }
+            : undefined;
+
     return (
         <div className="flex flex-col items-center gap-4 sm:gap-6 w-full px-4">
-            <div className="relative w-full max-w-135">
-                <div className="relative z-10 mx-auto w-fit px-8 py-2 bg-[#1a1410] border-2 border-[#4a4238] rounded-t-xl border-b-0 flex items-center gap-4">
+            <div className="relative w-full max-w-[540px]">
+                <div
+                    className="relative z-10 mx-auto w-fit px-8 py-2 border-2 rounded-t-xl border-b-0 flex items-center gap-4"
+                    style={{
+                        backgroundColor: theme.tab,
+                        borderColor: theme.tabBorder,
+                    }}
+                >
                     <span
                         className="text-3xl font-bold tracking-[0.2em] tabular-nums"
                         style={{
-                            color: theme.head,
+                            color: theme.scoreColor,
                             textShadow: `0 0 12px ${theme.glow}`,
                         }}
                     >
@@ -270,8 +471,8 @@ export default function GameCanvas() {
                     {isPlaying && (
                         <button
                             onClick={togglePause}
-                            aria-label={isPaused ? "Resume game" : "Pause game"}
-                            className="text-lime-300/70 hover:text-lime-300 text-xl leading-none"
+                            aria-label={isPaused ? "Resume" : "Pause"}
+                            className="text-xl leading-none text-white/70 hover:text-white"
                         >
                             {isPaused ? "▶️" : "⏸️"}
                         </button>
@@ -279,7 +480,8 @@ export default function GameCanvas() {
                 </div>
                 <div
                     ref={containerRef}
-                    className="relative -mt-px rounded-lg p-4 w-full touch-none wall-frame"
+                    className={`relative -mt-px rounded-lg p-4 w-full touch-none ${frameClass}`}
+                    style={frameStyle}
                 >
                     <canvas
                         ref={canvasRef}
@@ -324,7 +526,7 @@ export default function GameCanvas() {
                 <div />
                 <button
                     onClick={() => changeDirection({ x: 0, y: -1 })}
-                    aria-label="Move up"
+                    aria-label="Up"
                     className={dpadButtonClass}
                 >
                     ↑
@@ -332,7 +534,7 @@ export default function GameCanvas() {
                 <div />
                 <button
                     onClick={() => changeDirection({ x: -1, y: 0 })}
-                    aria-label="Move left"
+                    aria-label="Left"
                     className={dpadButtonClass}
                 >
                     ←
@@ -340,7 +542,7 @@ export default function GameCanvas() {
                 <div />
                 <button
                     onClick={() => changeDirection({ x: 1, y: 0 })}
-                    aria-label="Move right"
+                    aria-label="Right"
                     className={dpadButtonClass}
                 >
                     →
@@ -348,7 +550,7 @@ export default function GameCanvas() {
                 <div />
                 <button
                     onClick={() => changeDirection({ x: 0, y: 1 })}
-                    aria-label="Move down"
+                    aria-label="Down"
                     className={dpadButtonClass}
                 >
                     ↓
@@ -360,10 +562,6 @@ export default function GameCanvas() {
                 <Scoreboard refreshKey={scoreVersion} />
                 <SettingsMenu settings={settings} onUpdate={updateSettings} />
             </div>
-
-            {showNameEntry && (
-                <NameEntryModal score={score} onSubmit={handleNameSubmit} />
-            )}
         </div>
     );
 }

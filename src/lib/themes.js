@@ -1,4 +1,17 @@
 export const THEMES = {
+    google: {
+        label: "Google Classic",
+        boardA: "#aad751",
+        boardB: "#a2d149",
+        head: "#4674e9",
+        body: "#4674e9",
+        food: "#e7471d",
+        glow: "rgba(255,255,255,0.4)",
+        scoreColor: "#ffffff",
+        frame: "#578a34",
+        tab: "#4a752c",
+        tabBorder: "#3d6324",
+    },
     classic: {
         label: "Classic Nokia",
         boardA: "#0d2818",
@@ -7,6 +20,10 @@ export const THEMES = {
         body: "#4ade80",
         food: "#ff5c5c",
         glow: "rgba(132,255,92,0.35)",
+        scoreColor: "#7fff5c",
+        frame: null,
+        tab: "#1a1410",
+        tabBorder: "#4a4238",
     },
     neon: {
         label: "Neon Purple",
@@ -16,6 +33,10 @@ export const THEMES = {
         body: "#a855f7",
         food: "#5cffea",
         glow: "rgba(168,85,247,0.4)",
+        scoreColor: "#ff5cf7",
+        frame: null,
+        tab: "#1a1410",
+        tabBorder: "#4a4238",
     },
     amber: {
         label: "Retro Amber",
@@ -25,6 +46,10 @@ export const THEMES = {
         body: "#f59e0b",
         food: "#ff5c5c",
         glow: "rgba(245,158,11,0.35)",
+        scoreColor: "#ffcf5c",
+        frame: null,
+        tab: "#1a1410",
+        tabBorder: "#4a4238",
     },
 };
 
@@ -32,4 +57,9 @@ export const DIFFICULTIES = {
     easy: { label: "Easy", speed: 170, hasObstacles: false },
     normal: { label: "Normal", speed: 130, hasObstacles: false },
     hard: { label: "Hard", speed: 95, hasObstacles: true },
+};
+
+export const MODES = {
+    walls: { label: "Walls", wrap: false },
+    free: { label: "Free World", wrap: true },
 };
