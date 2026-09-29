@@ -37,6 +37,11 @@ export function playEatSound() {
     playTone(880, 0.1);
 }
 
+export function playBonusSound() {
+    playTone(1320, 0.1);
+    setTimeout(() => playTone(1760, 0.12), 90);
+}
+
 export function playGameOverSound() {
     playTone(220, 0.15);
     setTimeout(() => playTone(150, 0.25), 120);

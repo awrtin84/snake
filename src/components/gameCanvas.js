@@ -172,20 +172,44 @@ function drawSnake(ctx, body, heading, theme, offsetX, offsetY) {
     });
 }
 
+function drawBonusFood(ctx, bonusFood) {
+    const x = bonusFood.x * CELL_SIZE + CELL_SIZE / 2;
+    const y = bonusFood.y * CELL_SIZE + CELL_SIZE / 2;
+    const pulse = 1 + Math.sin(performance.now() / 110) * 0.18;
+    const size = CELL_SIZE * 0.3 * pulse;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = "#ffd23f";
+    ctx.shadowColor = "rgba(255, 210, 63, 0.8)";
+    ctx.shadowBlur = 12;
+    ctx.fillRect(-size, -size, size * 2, size * 2);
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.arc(x - size * 0.35, y - size * 0.35, size * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+}
+
 export default function GameCanvas() {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
     const { settings, updateSettings } = useSettings();
     const theme = THEMES[settings.theme] ?? THEMES.google;
     const difficulty = DIFFICULTIES[settings.difficulty] ?? DIFFICULTIES.normal;
-    const isFree = (MODES[settings.mode] ?? MODES.walls).wrap;
+    const modeKey = MODES[settings.mode] ? settings.mode : "walls";
+    const isFree = MODES[modeKey].wrap;
 
     const {
         snake,
         food,
+        bonusFood,
         obstacles,
         score,
         runId,
+        speed: currentSpeed,
         isGameOver,
         isPlaying,
         isPaused,
@@ -210,8 +234,8 @@ export default function GameCanvas() {
     }, [settings.soundEnabled]);
 
     useEffect(() => {
-        speedRef.current = difficulty.speed;
-    }, [difficulty.speed]);
+        speedRef.current = currentSpeed;
+    }, [currentSpeed]);
 
     useEffect(() => {
         const now = performance.now();
@@ -240,11 +264,11 @@ export default function GameCanvas() {
 
     useEffect(() => {
         if (wasPlayingRef.current && isGameOver) {
-            saveScore(score, (settings.playerName ?? "").trim());
+            saveScore(score, (settings.playerName ?? "").trim(), modeKey);
             setScoreVersion((v) => v + 1);
         }
         wasPlayingRef.current = isPlaying;
-    }, [isPlaying, isGameOver, score, settings.playerName]);
+    }, [isPlaying, isGameOver, score, settings.playerName, modeKey]);
 
     useEffect(() => {
         let rafId;
@@ -322,6 +346,10 @@ export default function GameCanvas() {
             );
             ctx.fill();
 
+            if (bonusFood) {
+                drawBonusFood(ctx, bonusFood);
+            }
+
             const { points, heading } = buildSnakePoints(
                 prevSnakeRef.current,
                 currentSnakeRef.current,
@@ -345,7 +373,7 @@ export default function GameCanvas() {
 
         rafId = requestAnimationFrame(render);
         return () => cancelAnimationFrame(rafId);
-    }, [food, theme, obstacles, isPaused, isFree]);
+    }, [food, bonusFood, theme, obstacles, isPaused, isFree]);
 
     useEffect(() => {
         const keyMap = {
@@ -406,7 +434,7 @@ export default function GameCanvas() {
             const dy = touch.clientY - touchStartRef.current.y;
             const absDx = Math.abs(dx);
             const absDy = Math.abs(dy);
-            const threshold = 20;
+            const threshold = 18;
 
             if (Math.max(absDx, absDy) < threshold) return;
 
@@ -432,9 +460,6 @@ export default function GameCanvas() {
         };
     }, [changeDirection, isPaused]);
 
-    const dpadButtonClass =
-        "flex items-center justify-center w-12 h-12 rounded-lg bg-black/40 hover:bg-black/60 border border-lime-500/40 text-lime-300 text-xl font-bold transition-colors active:scale-95";
-
     const frameClass = isFree
         ? "border-2 border-dashed border-white/40 bg-black/40"
         : theme.frame
@@ -450,7 +475,10 @@ export default function GameCanvas() {
             : undefined;
 
     return (
-        <div className="flex flex-col items-center gap-4 sm:gap-6 w-full px-4">
+        <div
+            className="flex flex-col items-center gap-5 sm:gap-6 w-full px-4"
+            style={{ "--accent": theme.head, "--accent-dim": theme.body }}
+        >
             <div className="relative w-full max-w-[540px]">
                 <div
                     className="relative z-10 mx-auto w-fit px-8 py-2 border-2 rounded-t-xl border-b-0 flex items-center gap-4"
@@ -460,7 +488,7 @@ export default function GameCanvas() {
                     }}
                 >
                     <span
-                        className="text-3xl font-bold tracking-[0.2em] tabular-nums"
+                        className="font-score text-3xl font-bold tracking-[0.2em] tabular-nums"
                         style={{
                             color: theme.scoreColor,
                             textShadow: `0 0 12px ${theme.glow}`,
@@ -472,7 +500,7 @@ export default function GameCanvas() {
                         <button
                             onClick={togglePause}
                             aria-label={isPaused ? "Resume" : "Pause"}
-                            className="text-xl leading-none text-white/70 hover:text-white"
+                            className="text-xl leading-none text-white/70 hover:text-white transition-colors"
                         >
                             {isPaused ? "▶️" : "⏸️"}
                         </button>
@@ -491,30 +519,24 @@ export default function GameCanvas() {
                     />
 
                     {!isPlaying && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/70 rounded-xl">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 modal-backdrop rounded-xl">
                             {isGameOver && (
                                 <p className="text-red-400 font-bold text-xl tracking-wide">
                                     GAME OVER — SCORE: {score}
                                 </p>
                             )}
-                            <button
-                                onClick={startGame}
-                                className="px-8 py-3 bg-lime-500 hover:bg-lime-400 text-black font-bold rounded-lg transition-colors text-lg"
-                            >
+                            <button onClick={startGame} className="btn-solid">
                                 {isGameOver ? "Play Again" : "Start Game"}
                             </button>
                         </div>
                     )}
 
                     {isPlaying && isPaused && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/70 rounded-xl">
-                            <p className="text-lime-300 font-bold text-xl tracking-widest">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 modal-backdrop rounded-xl">
+                            <p className="text-white font-bold text-xl tracking-widest">
                                 PAUSED
                             </p>
-                            <button
-                                onClick={togglePause}
-                                className="px-8 py-3 bg-lime-500 hover:bg-lime-400 text-black font-bold rounded-lg transition-colors text-lg"
-                            >
+                            <button onClick={togglePause} className="btn-solid">
                                 Resume
                             </button>
                         </div>
@@ -522,44 +544,8 @@ export default function GameCanvas() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:hidden">
-                <div />
-                <button
-                    onClick={() => changeDirection({ x: 0, y: -1 })}
-                    aria-label="Up"
-                    className={dpadButtonClass}
-                >
-                    ↑
-                </button>
-                <div />
-                <button
-                    onClick={() => changeDirection({ x: -1, y: 0 })}
-                    aria-label="Left"
-                    className={dpadButtonClass}
-                >
-                    ←
-                </button>
-                <div />
-                <button
-                    onClick={() => changeDirection({ x: 1, y: 0 })}
-                    aria-label="Right"
-                    className={dpadButtonClass}
-                >
-                    →
-                </button>
-                <div />
-                <button
-                    onClick={() => changeDirection({ x: 0, y: 1 })}
-                    aria-label="Down"
-                    className={dpadButtonClass}
-                >
-                    ↓
-                </button>
-                <div />
-            </div>
-
             <div className="flex gap-3">
-                <Scoreboard refreshKey={scoreVersion} />
+                <Scoreboard refreshKey={scoreVersion} defaultMode={modeKey} />
                 <SettingsMenu settings={settings} onUpdate={updateSettings} />
             </div>
         </div>

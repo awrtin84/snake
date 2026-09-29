@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { getHighScores, getStats } from "@/lib/scoreStorage";
+import { MODES } from "@/lib/themes";
 
-export default function Scoreboard({ refreshKey }) {
+export default function Scoreboard({ refreshKey, defaultMode }) {
+    const [activeMode, setActiveMode] = useState(defaultMode);
     const [scores, setScores] = useState([]);
     const [stats, setStats] = useState({
         gamesPlayed: 0,
@@ -12,9 +14,13 @@ export default function Scoreboard({ refreshKey }) {
     const [isOpen, setIsOpen] = useState(false);
 
     useEffect(() => {
-        setScores(getHighScores());
-        setStats(getStats());
-    }, [refreshKey]);
+        if (isOpen) setActiveMode(defaultMode);
+    }, [isOpen, defaultMode]);
+
+    useEffect(() => {
+        setScores(getHighScores(activeMode));
+        setStats(getStats(activeMode));
+    }, [refreshKey, activeMode]);
 
     const averageScore =
         stats.gamesPlayed > 0
@@ -27,7 +33,7 @@ export default function Scoreboard({ refreshKey }) {
                 onClick={() => setIsOpen(true)}
                 aria-haspopup="dialog"
                 aria-label="Open high scores"
-                className="flex items-center gap-2 px-6 py-2.5 bg-black/40 hover:bg-black/60 border border-lime-500/40 rounded-lg text-lime-300 font-bold tracking-wide transition-colors"
+                className="btn-chrome"
             >
                 🏆 High Scores
             </button>
@@ -37,55 +43,69 @@ export default function Scoreboard({ refreshKey }) {
                     role="dialog"
                     aria-modal="true"
                     aria-label="High scores"
-                    className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4"
+                    className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 px-4"
                     onClick={() => setIsOpen(false)}
                 >
                     <div
-                        className="bg-[#0d2818] border-2 border-lime-500/40 rounded-2xl p-6 w-full max-w-sm shadow-[0_0_60px_rgba(132,255,92,0.25)]"
+                        className="modal-shell rounded-2xl p-6 w-full max-w-sm"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lime-300 font-bold tracking-widest text-lg">
+                            <h2 className="text-white font-extrabold tracking-widest text-lg">
                                 🏆 HIGH SCORES
                             </h2>
                             <button
                                 onClick={() => setIsOpen(false)}
                                 aria-label="Close"
-                                className="text-lime-300/60 hover:text-lime-300 text-xl leading-none"
+                                className="text-white/50 hover:text-white text-xl leading-none transition-colors"
                             >
                                 ✕
                             </button>
                         </div>
 
+                        <div className="flex gap-2 mb-4">
+                            {Object.entries(MODES).map(([key, mode]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setActiveMode(key)}
+                                    className={`option-pill flex-1 px-3 py-2 text-sm font-semibold ${
+                                        activeMode === key ? "active" : ""
+                                    }`}
+                                >
+                                    {mode.label}
+                                </button>
+                            ))}
+                        </div>
+
                         <div className="grid grid-cols-3 gap-2 mb-5">
-                            <div className="bg-white/5 rounded-lg p-2.5 text-center">
-                                <p className="text-lime-100/50 text-xs mb-1">
-                                    Games
+                            <div className="rounded-xl p-2.5 text-center bg-white/5 border border-white/10">
+                                <p className="text-white/40 text-xs mb-1 tracking-wide">
+                                    GAMES
                                 </p>
-                                <p className="text-lime-300 font-bold text-lg">
+                                <p className="text-white font-bold text-lg">
                                     {stats.gamesPlayed}
                                 </p>
                             </div>
-                            <div className="bg-white/5 rounded-lg p-2.5 text-center">
-                                <p className="text-lime-100/50 text-xs mb-1">
-                                    Average
+                            <div className="rounded-xl p-2.5 text-center bg-white/5 border border-white/10">
+                                <p className="text-white/40 text-xs mb-1 tracking-wide">
+                                    AVERAGE
                                 </p>
-                                <p className="text-lime-300 font-bold text-lg">
+                                <p className="text-white font-bold text-lg">
                                     {averageScore}
                                 </p>
                             </div>
-                            <div className="bg-white/5 rounded-lg p-2.5 text-center">
-                                <p className="text-lime-100/50 text-xs mb-1">
-                                    Best
+                            <div className="rounded-xl p-2.5 text-center bg-white/5 border border-white/10">
+                                <p className="text-white/40 text-xs mb-1 tracking-wide">
+                                    BEST
                                 </p>
-                                <p className="text-lime-300 font-bold text-lg">
+                                <p className="text-white font-bold text-lg">
                                     {stats.bestScore}
                                 </p>
                             </div>
                         </div>
 
                         {scores.length === 0 ? (
-                            <p className="text-lime-100/50 text-sm text-center py-6">
+                            <p className="text-white/40 text-sm text-center py-6">
                                 No scores yet
                             </p>
                         ) : (
@@ -93,15 +113,20 @@ export default function Scoreboard({ refreshKey }) {
                                 {scores.map((entry, index) => (
                                     <li
                                         key={entry.date}
-                                        className="flex items-center justify-between bg-white/5 rounded-lg px-4 py-2.5"
+                                        className="flex items-center justify-between rounded-xl px-4 py-2.5 bg-white/5 border border-white/10"
                                     >
-                                        <span className="text-lime-400 font-bold w-6">
+                                        <span
+                                            className="font-extrabold w-6"
+                                            style={{
+                                                color: "var(--accent, #7fff5c)",
+                                            }}
+                                        >
                                             {index + 1}
                                         </span>
-                                        <span className="text-lime-100 text-sm flex-1 px-2 truncate">
+                                        <span className="text-white/90 text-sm flex-1 px-2 truncate">
                                             {entry.name || "Anonymous"}
                                         </span>
-                                        <span className="text-lime-100 font-bold text-lg">
+                                        <span className="text-white font-bold text-lg">
                                             {entry.score}
                                         </span>
                                     </li>
